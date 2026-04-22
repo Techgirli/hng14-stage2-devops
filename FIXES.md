@@ -202,3 +202,103 @@ const btn = document.querySelector('button');
 btn.disabled = true;
 // after request
 btn.disabled = false;
+
+_FIXES FOR main.py_
+**Fix 1**
+File: api/main.py
+Line: ~7
+Problem: Redis connection uses hardcoded localhost, which breaks in production or containerized environments.
+FROM: r = redis.Redis(host="localhost", port=6379)
+Fix: Changed
+TO: r = redis.Redis(
+host=os.environ.get("REDIS_HOST", "localhost"),
+port=int(os.environ.get("REDIS_PORT", 6379)),
+decode_responses=True
+)
+
+**Fix 2**
+File: api/main.py
+Line: ~13
+Problem: Redis list key uses "job" instead of "jobs" (inconsistent naming, bad convention)
+Fix: Changed
+
+**Fix 3**
+File: api/main.py
+Line: ~14
+Problem: No expiration set for job data → memory leak over time
+Fix: Added TTL
+r.hset(f"job:{job_id}", "status", "queued")
+r.expire(f"job:{job_id}", 3600)
+
+**Fix 4**
+File: api/main.py
+Line: 18
+Problem: Returns plain JSON without HTTP status control when job not found
+Fix: Use proper HTTP exception
+from fastapi import HTTPException
+
+if not status:
+raise HTTPException(status_code=404, detail="Job not found")
+
+**Fix 5**
+File: api/main.py
+Line: ~20
+Problem: Manual .decode() is unnecessary and unsafe if value is None
+Fix: Remove decode and rely on decode_responses=True
+
+**Fix 6**
+File: api/main.py
+Line: ~10
+Problem: No response model defined → weak API structure and no validation
+Fix: Add Pydantic models
+from pydantic import BaseModel
+
+class JobResponse(BaseModel):
+job_id: str
+status: str
+
+TO: @app.get("/jobs/{job_id}", response_model=JobResponse)
+
+**Fix 7**
+File: api/main.py
+Line: ~10
+Problem: No response model for POST endpoint
+Fix: Add model
+class CreateJobResponse(BaseModel):
+job_id: str
+
+**Fix 8**
+File: api/main.py
+Line: global
+Problem: No Redis connection error handling → app may crash silently
+Fix: Add connection test
+try:
+r.ping()
+except redis.ConnectionError:
+raise Exception("Redis connection failed")
+
+**Fix 9**
+File: api/main.py
+Line: global
+Problem: No health check endpoint (required for monitoring & HNG best practice)
+Fix: Add
+@app.get("/health")
+def health():
+return {"message": "healthy"}
+
+**Fix 10**
+File: api/main.py
+Line: global
+Problem: Missing root endpoint (/) required for HNG validation
+Fix: Add
+@app.get("/")
+def root():
+return {"message": "API is running"}
+
+**Fix 11**
+File: api/main.py
+Line: global
+Problem: No async usage — FastAPI benefits from async for performance
+Fix: Convert endpoints
+@app.post("/jobs")
+async def create_job():
