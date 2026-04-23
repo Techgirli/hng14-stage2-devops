@@ -117,9 +117,8 @@ jobs:
           docker compose up -d --build
           sleep 20
 
-      - - name: Health check all services
-        run: |
-          curl -f http://localhost:3000/
+      - name: Health check frontend
+        run: curl -f http://localhost:3000/
 
       - name: Submit job and verify completion
         run: |
@@ -173,3 +172,4 @@ jobs:
             done
             echo "Health check failed - aborting"
             exit 1
+          EOF
