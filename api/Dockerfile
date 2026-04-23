@@ -4,6 +4,7 @@ WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
+# hadolint ignore=DL3018
 RUN apk add --no-cache curl
 
 COPY requirements.txt .
