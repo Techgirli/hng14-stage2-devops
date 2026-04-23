@@ -6,28 +6,23 @@ on:
   pull_request:
 
 jobs:
-
-  # ---------------- LINT ----------------
   lint:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      # Python lint
       - name: Python lint (flake8)
         run: |
           pip install flake8
           flake8 api/ worker/ --max-line-length=100
 
-      # JS lint
       - name: JS lint (eslint)
         run: |
           cd frontend
           npm install
           npx eslint .
 
-      # Docker lint
       - name: Dockerfile lint (hadolint)
         run: |
           wget -qO hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
@@ -36,8 +31,6 @@ jobs:
           ./hadolint worker/Dockerfile
           ./hadolint frontend/Dockerfile
 
-
-  # ---------------- TEST ----------------
   test:
     needs: lint
     runs-on: ubuntu-latest
@@ -57,8 +50,6 @@ jobs:
           name: coverage-report
           path: api/coverage.xml
 
-
-  # ---------------- BUILD ----------------
   build:
     needs: test
     runs-on: ubuntu-latest
@@ -76,7 +67,6 @@ jobs:
           docker build -t frontend:${{ github.sha }} ./frontend
 
 
-  # ---------------- SECURITY SCAN ----------------
   security:
     needs: build
     runs-on: ubuntu-latest
@@ -99,8 +89,6 @@ jobs:
           name: trivy-results
           path: trivy-results.sarif
 
-
-  # ---------------- INTEGRATION TEST ----------------
   integration:
     needs: security
     runs-on: ubuntu-latest
@@ -148,8 +136,6 @@ jobs:
         if: always()
         run: docker compose down -v
 
-
-  # ---------------- DEPLOY ----------------
   deploy:
     needs: integration
     runs-on: ubuntu-latest
