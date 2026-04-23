@@ -3,7 +3,6 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
-# In-memory store for tests
 jobs = {}
 
 
@@ -23,18 +22,18 @@ def health():
 
 @app.post("/jobs")
 def create_job(job: JobRequest):
-    job_id = len(jobs) + 1
+    job_id = str(len(jobs) + 1)
     jobs[job_id] = {
         "id": job_id,
         "task": job.task,
         "status": "pending"
     }
-    return jobs[job_id]
+    return {"id": job_id, "status": "pending"}
 
 
 @app.get("/jobs/{job_id}")
-def get_job(job_id: int):
-    job = jobs.get(job_id)
-    if not job:
+def get_job(job_id: str):
+    if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
-    return job
+
+    return jobs[job_id]
