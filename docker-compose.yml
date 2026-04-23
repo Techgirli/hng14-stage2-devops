@@ -1,6 +1,7 @@
 services:
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     networks:
       - internal
     healthcheck:
@@ -16,12 +17,13 @@ services:
 
   api:
     build: ./api
+    restart: unless-stopped
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     networks:
       - internal
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
     depends_on:
       redis:
         condition: service_healthy
@@ -38,12 +40,13 @@ services:
 
   worker:
     build: ./worker
+    restart: unless-stopped
     command: python worker.py
     networks:
       - internal
     environment:
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      REDIS_HOST: ${REDIS_HOST}
+      REDIS_PORT: ${REDIS_PORT}
     depends_on:
       redis:
         condition: service_healthy
@@ -55,12 +58,13 @@ services:
 
   frontend:
     build: ./frontend
+    restart: unless-stopped
     networks:
       - internal
     ports:
       - "3000:3000"
     environment:
-      API_URL: http://api:8000
+      API_URL: ${API_URL}
     depends_on:
       api:
         condition: service_healthy
