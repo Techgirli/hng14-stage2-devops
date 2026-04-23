@@ -1,16 +1,12 @@
-from main import app
 import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
 import sys
 import os
+from unittest.mock import patch, MagicMock
+from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
-client = TestClient(app)
-
-# Create a mock redis instance
+# Mock redis BEFORE importing app
 mock_redis_instance = MagicMock()
 mock_redis_instance.incr.return_value = 1
 mock_redis_instance.hset.return_value = True
@@ -19,6 +15,11 @@ mock_redis_instance.hgetall.return_value = {
     "status": "pending",
     "task": "test"
 }
+
+with patch('redis.Redis', return_value=mock_redis_instance):
+    from main import app
+
+client = TestClient(app)
 
 
 def test_root_endpoint():
@@ -53,7 +54,7 @@ def test_get_job_status():
 
 
 def test_get_job_not_found():
-    """Test GET /jobs/:id returns 404 when job doesn't exist"""
+    """Test GET /jobs/:id returns 404 when job doesnt exist"""
     mock_empty = MagicMock()
     mock_empty.hgetall.return_value = {}
     with patch('main.get_redis', return_value=mock_empty):
