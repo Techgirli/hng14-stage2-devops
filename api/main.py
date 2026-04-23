@@ -1,26 +1,40 @@
-from fastapi import FastAPI
-import redis
-import os
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
 
 app = FastAPI()
 
+# In-memory store for tests
+jobs = {}
 
-def get_redis():
-    return redis.Redis(
-        host=os.getenv("REDIS_HOST", "redis"),
-        port=int(os.getenv("REDIS_PORT", 6379)),
-        decode_responses=True
-    )
+
+class JobRequest(BaseModel):
+    task: str
+
+
+@app.get("/")
+def root():
+    return {"message": "API is running"}
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok"}
+    return {"message": "healthy"}
 
 
 @app.post("/jobs")
-def create_job(job_id: str):
-    r = get_redis()
-    r.lpush("job", job_id)
-    r.hset(f"job:{job_id}", "status", "queued")
-    return {"job_id": job_id}
+def create_job(job: JobRequest):
+    job_id = len(jobs) + 1
+    jobs[job_id] = {
+        "id": job_id,
+        "task": job.task,
+        "status": "pending"
+    }
+    return jobs[job_id]
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: int):
+    job = jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
