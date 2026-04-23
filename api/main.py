@@ -23,11 +23,13 @@ def health():
 @app.post("/jobs")
 def create_job(job: JobRequest):
     job_id = str(len(jobs) + 1)
+
     jobs[job_id] = {
         "id": job_id,
         "task": job.task,
         "status": "pending"
     }
+
     return {"id": job_id, "status": "pending"}
 
 
