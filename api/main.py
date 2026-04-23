@@ -1,58 +1,57 @@
-import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
-import sys
 import os
-
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# Mock redis before importing app
-mock_redis_instance = MagicMock()
-mock_redis_instance.incr.return_value = 1
-mock_redis_instance.hset.return_value = True
-mock_redis_instance.lpush.return_value = True
-mock_redis_instance.hgetall.return_value = {
-    "id": "1",
-    "status": "pending",
-    "task": "test"
-}
-
-with patch('redis.Redis', return_value=mock_redis_instance):
-    from main import app
-
-client = TestClient(app)
+import redis
+from pydantic import BaseModel
+give me from fastapi import FastAPI, HTTPException
+app = FastAPI()
+# Redis connection (test-safe)
 
 
-def test_root_endpoint():
-    """Test GET / returns correct message"""
-    response = client.get("/")
-    assert response.status_code == 200
-    assert response.json() == {"message": "API is running"}
+def get_redis():
+    return redis.Redis(
+        host=os.getenv("REDIS_HOST", "redis"),
+        port=int(os.getenv("REDIS_PORT", 6379)),
+        decode_responses=True
+    )
+# ---------------- ROOT ----------------
 
 
-def test_health_endpoint():
-    """Test GET /health returns healthy message"""
-    response = client.get("/health")
-    assert response.status_code == 200
-    assert response.json() == {"message": "healthy"}
+@app.get("/")
+def root():
+    return {"message": "API is running"}
+# ---------------- HEALTH ----------------
 
 
-def test_create_job():
-    """Test POST /jobs creates a job and returns id"""
-    response = client.post("/jobs", json={"task": "test"})
-    assert response.status_code == 200
-    assert "id" in response.json()
+@app.get("/health")
+def health():
+    return {"message": "healthy"}
+# ---------------- MODEL ----------------
 
 
-def test_get_job_status():
-    """Test GET /jobs/:id returns job data"""
-    response = client.get("/jobs/1")
-    assert response.status_code == 200
-    data = response.json()
-    assert "status" in data
+class JobRequest(BaseModel):
+    task: str
+# ---------------- CREATE JOB ----------------
 
 
-def test_content_type_is_json():
-    """Test all endpoints return application/json"""
-    response = client.get("/")
-    assert "application/json" in response.headers["content-type"]
+@app.post("/jobs")
+def create_job(job: JobRequest):
+    r = get_redis()
+    job_id = r.incr("job:counter")
+    r.hset(
+        f"job:{job_id}",
+        mapping={
+            "id": str(job_id),
+            "status": "pending",
+            "task": job.task
+        }
+    )
+    return {"id": job_id}
+# ---------------- GET JOB ----------------
+
+
+@app.get("/jobs/{job_id}")
+def get_job(job_id: int):
+    r = get_redis()
+    job = r.hgetall(f"job:{job_id}")
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
