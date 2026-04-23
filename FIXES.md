@@ -302,3 +302,8 @@ Problem: No async usage — FastAPI benefits from async for performance
 Fix: Convert endpoints
 @app.post("/jobs")
 async def create_job():
+
+## Fix 1 — worker/worker.py Line 5
+
+- **Problem:** Redis host hardcoded as "localhost" fails inside Docker where Redis is on a named service
+- **Fix:** Changed to os.environ.get("REDIS_HOST", "redis")
