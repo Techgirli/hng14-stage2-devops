@@ -4,8 +4,7 @@ WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-# Fixed DL3018 by pinning curl version (CI-required approach)
-RUN apk add --no-cache curl=8.5.0-r0
+RUN apk add --no-cache curl
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout=300 -r requirements.txt

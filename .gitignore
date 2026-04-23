@@ -4,3 +4,12 @@
 .env
 **/.env
 node_modules/
+testenv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+api/__pycache__/
+api/tests/__pycache__/
+worker/__pycache__/
+coverage.xml
