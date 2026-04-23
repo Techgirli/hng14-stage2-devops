@@ -6,22 +6,28 @@ on:
   pull_request:
 
 jobs:
+
+  # ---------------- LINT ----------------
   lint:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
+      # Python lint
       - name: Python lint (flake8)
         run: |
           pip install flake8
           flake8 api/ worker/ --max-line-length=100
 
+      # JS lint
       - name: JS lint (eslint)
         run: |
           cd frontend
-          npm ci
+          npm install
           npx eslint .
 
+      # Docker lint
       - name: Dockerfile lint (hadolint)
         run: |
           wget -qO hadolint https://github.com/hadolint/hadolint/releases/latest/download/hadolint-Linux-x86_64
@@ -30,15 +36,18 @@ jobs:
           ./hadolint worker/Dockerfile
           ./hadolint frontend/Dockerfile
 
+
+  # ---------------- TEST ----------------
   test:
     needs: lint
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run API unit tests
+      - name: Install dependencies and run tests
         run: |
-          pip install pytest pytest-cov fastapi httpx redis fakeredis
+          pip install pytest pytest-cov fastapi httpx fakeredis
           cd api
           pytest tests/ --cov=. --cov-report=xml
 
@@ -48,36 +57,37 @@ jobs:
           name: coverage-report
           path: api/coverage.xml
 
+
+  # ---------------- BUILD ----------------
   build:
     needs: test
     runs-on: ubuntu-latest
-    services:
-      registry:
-        image: registry:2
-        ports:
-          - 5000:5000
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build and push images
-        run: |
-          docker build -t localhost:5000/api:${{ github.sha }} -t localhost:5000/api:latest ./api
-          docker build -t localhost:5000/worker:${{ github.sha }} -t localhost:5000/worker:latest ./worker
-          docker build -t localhost:5000/frontend:${{ github.sha }} -t localhost:5000/frontend:latest ./frontend
-          docker push localhost:5000/api:${{ github.sha }}
-          docker push localhost:5000/worker:${{ github.sha }}
-          docker push localhost:5000/frontend:${{ github.sha }}
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
+      - name: Build images
+        run: |
+          docker build -t api:${{ github.sha }} ./api
+          docker build -t worker:${{ github.sha }} ./worker
+          docker build -t frontend:${{ github.sha }} ./frontend
+
+
+  # ---------------- SECURITY SCAN ----------------
   security:
     needs: build
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Scan with Trivy
+      - name: Scan API image with Trivy
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: localhost:5000/api:latest
+          image-ref: api:${{ github.sha }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL
@@ -89,60 +99,95 @@ jobs:
           name: trivy-results
           path: trivy-results.sarif
 
+
+  # ---------------- INTEGRATION TEST ----------------
   integration:
     needs: security
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
 
       - name: Start full stack
         run: |
-          cp .env.example .env
           docker compose up -d --build
-          sleep 10
+          sleep 15
 
-      - name: Submit job and poll for completion
+      - name: Health check API
         run: |
-          JOB=$(curl -sf -X POST http://localhost:3000/jobs -H "Content-Type: application/json" -d '{"task":"test"}')
-          JOB_ID=$(echo $JOB | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+          curl -f http://localhost:8000/health
+
+      - name: Submit job and verify completion
+        run: |
+          RESPONSE=$(curl -s -X POST http://localhost:8000/jobs \
+            -H "Content-Type: application/json" \
+            -d '{"task":"test"}')
+
+          JOB_ID=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['job_id'])")
+
+          echo "Job ID: $JOB_ID"
+
           for i in $(seq 1 30); do
-            STATUS=$(curl -sf http://localhost:3000/jobs/$JOB_ID | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
-            if [ "$STATUS" = "completed" ]; then echo "Job completed!"; exit 0; fi
+            STATUS=$(curl -s http://localhost:8000/jobs/$JOB_ID \
+              | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
+
+            echo "Status: $STATUS"
+
+            if [ "$STATUS" = "completed" ]; then
+              echo "Job completed successfully"
+              exit 0
+            fi
+
             sleep 2
           done
-          echo "Job never completed"; exit 1
 
-      - name: Tear down
+          echo "Job did not complete in time"
+          exit 1
+
+      - name: Tear down stack
         if: always()
         run: docker compose down -v
 
+
+  # ---------------- DEPLOY ----------------
   deploy:
     needs: integration
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Rolling deploy
+      - name: Deploy via SSH (rolling update)
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
           DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+
         run: |
           echo "$DEPLOY_KEY" > key.pem
           chmod 600 key.pem
+
           ssh -i key.pem -o StrictHostKeyChecking=no ubuntu@$DEPLOY_HOST << 'EOF'
+
             cd ~/hng14-stage2-devops
-            git pull
-            docker compose pull
-            docker compose up -d --no-deps --build api
-            # This is a waiting health check
+
+            git pull origin main
+
+            docker compose down
+
+            docker compose up -d --build
+
+            # health check loop
             for i in $(seq 1 12); do
-              if docker compose ps api | grep healthy; then
-                echo "Deploy successful"
+              if curl -f http://localhost:8000/health; then
+                echo "Deployment successful"
                 exit 0
               fi
               sleep 5
             done
-            echo "Health check failed, aborting"
+
+            echo "Deployment failed - rolling back"
+            docker compose down
             exit 1
+
           EOF
