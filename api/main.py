@@ -1,9 +1,9 @@
-import os
-import redis
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-give me from fastapi import FastAPI, HTTPException
+import redis
+import os
+
 app = FastAPI()
-# Redis connection (test-safe)
 
 
 def get_redis():
@@ -12,24 +12,20 @@ def get_redis():
         port=int(os.getenv("REDIS_PORT", 6379)),
         decode_responses=True
     )
-# ---------------- ROOT ----------------
 
 
 @app.get("/")
 def root():
     return {"message": "API is running"}
-# ---------------- HEALTH ----------------
 
 
 @app.get("/health")
 def health():
     return {"message": "healthy"}
-# ---------------- MODEL ----------------
 
 
 class JobRequest(BaseModel):
     task: str
-# ---------------- CREATE JOB ----------------
 
 
 @app.post("/jobs")
@@ -45,7 +41,6 @@ def create_job(job: JobRequest):
         }
     )
     return {"id": job_id}
-# ---------------- GET JOB ----------------
 
 
 @app.get("/jobs/{job_id}")
