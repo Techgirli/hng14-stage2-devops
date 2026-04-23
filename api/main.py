@@ -3,6 +3,7 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+
 jobs = {}
 
 
@@ -27,14 +28,14 @@ def create_job(job: JobRequest):
     jobs[job_id] = {
         "id": job_id,
         "task": job.task,
-        "status": "pending"
+        "status": "queued"
     }
 
-    return {"id": job_id, "status": "pending"}
+    return {"id": job_id}
 
 
 @app.get("/jobs/{job_id}")
-def get_job(job_id: str):
+def get_job_status(job_id: str):
     if job_id not in jobs:
         raise HTTPException(status_code=404, detail="Job not found")
 
