@@ -9,7 +9,8 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Python lint (flake8)
         run: |
@@ -34,7 +35,8 @@ jobs:
     needs: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Install dependencies and run tests
         run: |
@@ -57,30 +59,44 @@ jobs:
         ports:
           - 5000:5000
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:
           driver-opts: network=host
 
+      - name: Cache Docker layers
+        uses: actions/cache@v3
+        with:
+          path: /tmp/.buildx-cache
+          key: ${{ runner.os }}-buildx-${{ github.sha }}
+          restore-keys: |
+            ${{ runner.os }}-buildx-
+
       - name: Build and push images to local registry
         run: |
-          docker build -t localhost:5000/api:${{ github.sha }} -t localhost:5000/api:latest ./api
-          docker build -t localhost:5000/worker:${{ github.sha }} -t localhost:5000/worker:latest ./worker
-          docker build -t localhost:5000/frontend:${{ github.sha }} -t localhost:5000/frontend:latest ./frontend
-          docker push localhost:5000/api:${{ github.sha }}
-          docker push localhost:5000/api:latest
-          docker push localhost:5000/worker:${{ github.sha }}
-          docker push localhost:5000/worker:latest
-          docker push localhost:5000/frontend:${{ github.sha }}
-          docker push localhost:5000/frontend:latest
+          docker buildx build --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -t localhost:5000/api:${{ github.sha }} -t localhost:5000/api:latest \
+            --push ./api
+          docker buildx build --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -t localhost:5000/worker:${{ github.sha }} -t localhost:5000/worker:latest \
+            --push ./worker
+          docker buildx build --cache-from type=local,src=/tmp/.buildx-cache \
+            --cache-to type=local,dest=/tmp/.buildx-cache-new,mode=max \
+            -t localhost:5000/frontend:${{ github.sha }} -t localhost:5000/frontend:latest \
+            --push ./frontend
+          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
   security:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Build images for scanning
         run: |
@@ -107,7 +123,8 @@ jobs:
     needs: security
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Create .env file
         run: cp .env.example .env
@@ -121,25 +138,8 @@ jobs:
         run: curl -f http://localhost:3000/
 
       - name: Submit job and verify completion
-        run: |
-          RESPONSE=$(curl -s -X POST http://localhost:3000/jobs \
-            -H "Content-Type: application/json" \
-            -d '{"task":"test"}')
-          echo "Response: $RESPONSE"
-          JOB_ID=$(echo $RESPONSE | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-          echo "Job ID: $JOB_ID"
-          for i in $(seq 1 30); do
-            STATUS=$(curl -s http://localhost:3000/jobs/$JOB_ID \
-              | python3 -c "import sys,json; print(json.load(sys.stdin)['status'])")
-            echo "Status: $STATUS"
-            if [ "$STATUS" = "completed" ]; then
-              echo "Job completed successfully!"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "Job did not complete in time"
-          exit 1
+        run: bash scripts/integration-test.sh
+        timeout-minutes: 2
 
       - name: Tear down stack
         if: always()
@@ -150,7 +150,8 @@ jobs:
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Deploy via SSH rolling update
         env:
