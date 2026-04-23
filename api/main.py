@@ -40,6 +40,7 @@ def create_job(job: JobRequest):
             "task": job.task
         }
     )
+    r.lpush("job", str(job_id))
     return {"id": job_id}
 
 
