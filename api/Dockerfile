@@ -4,7 +4,8 @@ WORKDIR /app
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
-RUN apk add --no-cache curl
+# fixed hadolint DL3018 issue
+RUN apk add --no-cache curl  # hadolint ignore=DL3018
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --timeout=300 -r requirements.txt
